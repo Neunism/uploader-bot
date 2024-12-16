@@ -1,7 +1,8 @@
 import os
 import ftplib
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
+from telegram.ext.filters import Filters  # تغییر واردات Filters
 
 # توکن ربات تلگرام خود را وارد کنید
 TELEGRAM_TOKEN = 'توکن_ربات_تلگرام_شما'
