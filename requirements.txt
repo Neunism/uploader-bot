@@ -1,3 +1,2 @@
 python-telegram-bot==20.0
-aria2p==1.4.0
-requests
+webtorrent
