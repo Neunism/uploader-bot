@@ -1,65 +1,84 @@
 import os
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from webtorrent import WebTorrent
 import ftplib
-import shutil
+import logging
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# متغیرهای محیطی
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')  # توکن ربات تلگرام
-FTP_HOST = os.getenv('FTP_HOST')  # آی‌پی هاست FTP
-FTP_USER = os.getenv('FTP_USER')  # نام کاربری FTP
-FTP_PASS = os.getenv('FTP_PASS')  # پسورد FTP
-FTP_TARGET_DIR = os.getenv('FTP_TARGET_DIR')  # پوشه مقصد در هاست FTP
+# اطلاعات FTP شما
+FTP_HOST = "89.235.78.130"
+FTP_USERNAME = "pl.ortatv.fun"
+FTP_PASSWORD = "k7ghB95KaTofWOx4"
+FTP_DEST_DIR = "/series"  # پوشه مقصد در هاست
 
-# اتصال به تلگرام
-updater = Updater(TELEGRAM_TOKEN, use_context=True)
-dispatcher = updater.dispatcher
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+# فعال کردن لاگینگ
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# دانلود تورنت با WebTorrent
-def download_torrent(torrent_magnet, file_name):
-    client = WebTorrent()
-    client.add(torrent_magnet, lambda torrent: torrent.download(file_name))
-    print(f"دانلود تورنت {torrent_magnet} با نام {file_name} تکمیل شد.")
+def start(update: Update, context: CallbackContext):
+    """پیام خوش‌آمدگویی"""
+    update.message.reply_text("سلام! من یک ربات هستم. لطفاً لینک مستقیم فایل را ارسال کن تا آن را به هاست آپلود کنم.")
 
-# آپلود فایل به هاست FTP
-def upload_to_ftp(file_path):
-    with ftplib.FTP(FTP_HOST) as ftp:
-        ftp.login(FTP_USER, FTP_PASS)
-        with open(file_path, 'rb') as file:
-            ftp.storbinary(f'STOR {FTP_TARGET_DIR}/{os.path.basename(file_path)}', file)
-    print(f"فایل {file_path} به هاست FTP آپلود شد.")
-
-# دستور /start
-def start(update, context):
-    update.message.reply_text("سلام! برای دانلود تورنت و ارسال فایل‌ها به هاست FTP، لینک تورنت یا فایل را ارسال کنید.")
-
-# دریافت لینک تورنت و دانلود آن
-def handle_message(update, context):
-    if update.message.text.startswith('magnet:'):
-        torrent_magnet = update.message.text
-        file_name = 'downloaded_file'  # نام فایل دانلود شده
-        update.message.reply_text('در حال دانلود تورنت...')
-        download_torrent(torrent_magnet, file_name)
-        update.message.reply_text(f'تورنت دانلود شد: {file_name}')
-
-        # آپلود فایل به FTP
-        update.message.reply_text('در حال آپلود فایل به هاست...')
-        upload_to_ftp(file_name)
-        update.message.reply_text(f'فایل به هاست آپلود شد: {file_name}')
+def handle_message(update: Update, context: CallbackContext):
+    """وقتی که پیام حاوی لینک مستقیم باشد"""
+    url = update.message.text
+    
+    # بررسی لینک
+    if url.startswith("http://") or url.startswith("https://"):
+        update.message.reply_text(f"در حال آپلود فایل از لینک: {url}")
         
-        # حذف فایل دانلود شده بعد از آپلود
-        if os.path.exists(file_name):
-            os.remove(file_name)
-            print(f"فایل {file_name} حذف شد.")
+        try:
+            # آپلود فایل
+            upload_to_ftp(url)
+            update.message.reply_text("آپلود فایل با موفقیت انجام شد!")
+        except Exception as e:
+            update.message.reply_text(f"خطا در آپلود فایل: {e}")
+    else:
+        update.message.reply_text("این لینک معتبر نیست. لطفاً یک لینک مستقیم ارسال کنید.")
 
-# اتصال دستورات به ربات
-start_handler = CommandHandler('start', start)
-dispatcher.add_handler(start_handler)
+def upload_to_ftp(url: str):
+    """آپلود فایل به هاست FTP"""
+    
+    # اتصال به FTP
+    ftp = ftplib.FTP(FTP_HOST)
+    ftp.login(FTP_USERNAME, FTP_PASSWORD)
+    
+    # دریافت فایل از URL
+    local_filename = url.split("/")[-1]  # نام فایل را از URL استخراج می‌کنیم
+    with open(local_filename, 'wb') as f:
+        f.write(requests.get(url).content)
 
-message_handler = MessageHandler(Filters.text & ~Filters.command, handle_message)
-dispatcher.add_handler(message_handler)
+    # آپلود به FTP
+    with open(local_filename, 'rb') as file:
+        ftp.cwd(FTP_DEST_DIR)  # پوشه مقصد
+        ftp.storbinary(f"STOR {local_filename}", file)
 
-# شروع ربات
-updater.start_polling()
+    # بستن اتصال FTP
+    ftp.quit()
+
+    # حذف فایل محلی پس از آپلود
+    os.remove(local_filename)
+
+def main():
+    """راه‌اندازی ربات"""
+    
+    # توکن ربات
+    TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"
+    
+    # راه‌اندازی ربات
+    updater = Updater(TELEGRAM_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # تنظیم دستور start
+    dispatcher.add_handler(CommandHandler("start", start))
+
+    # تنظیم دریافت پیام‌ها و بررسی لینک‌ها
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+    # شروع ربات
+    updater.start_polling()
+
+    # اجرای ربات تا زمانی که خاموش نشود
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
