@@ -1,8 +1,9 @@
 import os
 import ftplib
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
-from telegram.ext import filters  # تغییر در واردات Filters
+from telegram.ext import CommandHandler, MessageHandler, Application
+from telegram.ext import filters  # تغییر در واردات filters
+from telegram.ext import CallbackContext
 
 # توکن ربات تلگرام خود را وارد کنید
 TELEGRAM_TOKEN = '7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504'  # توکن ربات شما
@@ -27,38 +28,38 @@ def upload_to_ftp(file_path: str):
         return False
 
 # تابع برای شروع کار ربات
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text('سلام! من آماده هستم تا فایل‌ها را دریافت کنم و آپلود کنم.')
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text('سلام! من آماده هستم تا فایل‌ها را دریافت کنم و آپلود کنم.')
 
 # تابع برای ارسال پیام هنگامی که فایل ارسال می‌شود
-def handle_file(update: Update, context: CallbackContext):
+async def handle_file(update: Update, context: CallbackContext):
     file = update.message.document
     if file:
-        file_path = file.get_file().download()
-        update.message.reply_text(f"در حال آپلود فایل {file.file_name} به سرور FTP...")
+        file_path = await file.get_file().download()  # استفاده از async برای دانلود فایل
+        await update.message.reply_text(f"در حال آپلود فایل {file.file_name} به سرور FTP...")
         
         # ارسال فایل به FTP
         if upload_to_ftp(file_path):
-            update.message.reply_text(f"فایل {file.file_name} با موفقیت آپلود شد!")
+            await update.message.reply_text(f"فایل {file.file_name} با موفقیت آپلود شد!")
         else:
-            update.message.reply_text(f"خطا در آپلود فایل {file.file_name}. لطفاً دوباره امتحان کنید.")
+            await update.message.reply_text(f"خطا در آپلود فایل {file.file_name}. لطفاً دوباره امتحان کنید.")
     else:
-        update.message.reply_text("لطفاً یک فایل ارسال کنید.")
+        await update.message.reply_text("لطفاً یک فایل ارسال کنید.")
 
 # تابع برای تنظیمات و شروع ربات
-def main():
-    updater = Updater(TELEGRAM_TOKEN, use_context=True)
-    dp = updater.dispatcher
+async def main():
+    # استفاده از Application به‌جای Updater
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # دستورات ربات
-    dp.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("start", start))
     
     # دریافت فایل‌ها
-    dp.add_handler(MessageHandler(filters.Document.ALL, handle_file))  # تغییر در استفاده از filters
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))  # تغییر در استفاده از filters
     
     # شروع ربات
-    updater.start_polling()
-    updater.idle()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())  # استفاده از asyncio برای اجرای main
