@@ -1,7 +1,8 @@
 import os
 import ftplib
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
+from telegram.ext import filters  # تغییر در واردات Filters
 
 # توکن ربات تلگرام خود را وارد کنید
 TELEGRAM_TOKEN = '7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504'  # توکن ربات شما
@@ -53,7 +54,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     
     # دریافت فایل‌ها
-    dp.add_handler(MessageHandler(Filters.document, handle_file))
+    dp.add_handler(MessageHandler(filters.Document.ALL, handle_file))  # تغییر در استفاده از filters
     
     # شروع ربات
     updater.start_polling()
