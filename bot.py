@@ -1,99 +1,101 @@
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import CallbackContext
 import os
 import ftplib
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-import subprocess
+import aria2p
 
-# اطلاعات ربات
-TELEGRAM_API_TOKEN = '7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504'
+# توکن ربات تلگرام شما
+TELEGRAM_TOKEN = "7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504"
 
-# اطلاعات FTP هاست دانلود
-FTP_HOST = '89.235.78.130'
-FTP_USER = 'pl.ortatv.fun'
-FTP_PASS = 'k7ghB95KaTofWOx4'
-FTP_DIR = 'series'  # پوشه مقصد در هاست دانلود
+# اطلاعات FTP
+FTP_HOST = "89.235.78.130"
+FTP_USER = "pl.ortatv.fun"
+FTP_PASS = "k7ghB95KaTofWOx4"
+FTP_TARGET_DIR = "/series"
 
-# پوشه محلی برای ذخیره فایل‌ها
-DOWNLOAD_DIR = '/tmp/downloads'
+# پیکربندی aria2
+aria2 = aria2p.API(aria2p.Client(
+    host="http://127.0.0.1:6800/jsonrpc",  # آدرس سرور aria2
+    secret=""
+))
+
+# تابع شروع ربات
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text("سلام! من آماده‌ام که به شما کمک کنم. لطفاً یک لینک تورنت یا لینک مستقیم ارسال کنید.")
+
+# تابع برای پردازش لینک‌ها (تورنت یا مستقیم)
+async def handle_message(update: Update, context: CallbackContext):
+    text = update.message.text
+
+    # اگر لینک تورنت است
+    if text.endswith(".torrent"):
+        await update.message.reply_text("در حال دانلود فایل تورنت...")
+        download_torrent(text, update)
+    # اگر لینک مستقیم است
+    elif text.startswith("http"):
+        await update.message.reply_text("در حال دانلود فایل از لینک مستقیم...")
+        download_direct_link(text, update)
+    else:
+        await update.message.reply_text("لطفاً یک لینک تورنت یا لینک مستقیم معتبر ارسال کنید.")
 
 # دانلود تورنت با aria2
-def download_torrent(torrent_url):
-    command = f"aria2c --dir={DOWNLOAD_DIR} {torrent_url}"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
-    if process.returncode == 0:
-        return True, None
-    else:
-        return False, stderr.decode()
+def download_torrent(torrent_url: str, update: Update):
+    try:
+        # دانلود تورنت با aria2
+        download = aria2.add_torrent(torrent_url)
+        file_path = download.files[0].path
+
+        # آپلود فایل به هاست دانلود
+        upload_to_ftp(file_path, update)
+    except Exception as e:
+        update.message.reply_text(f"خطا در دانلود تورنت: {str(e)}")
+
+# دانلود لینک مستقیم و آپلود به FTP
+def download_direct_link(url: str, update: Update):
+    try:
+        # دانلود فایل از لینک مستقیم
+        file_name = url.split("/")[-1]
+        download_path = os.path.join("/tmp", file_name)
+
+        os.system(f"curl -L {url} -o {download_path}")
+
+        # آپلود فایل به هاست دانلود
+        upload_to_ftp(download_path, update)
+    except Exception as e:
+        update.message.reply_text(f"خطا در دانلود لینک مستقیم: {str(e)}")
 
 # آپلود فایل به هاست FTP
-def upload_to_ftp(filename):
+def upload_to_ftp(file_path: str, update: Update):
     try:
-        ftp = ftplib.FTP(FTP_HOST)
-        ftp.login(FTP_USER, FTP_PASS)
-        ftp.cwd(FTP_DIR)
-        
-        with open(filename, 'rb') as f:
-            ftp.storbinary(f'STOR {os.path.basename(filename)}', f)
-        
-        ftp.quit()
-        return True, None
+        # اتصال به FTP
+        with ftplib.FTP(FTP_HOST) as ftp:
+            ftp.login(FTP_USER, FTP_PASS)
+
+            # تغییر به دایرکتوری مقصد
+            ftp.cwd(FTP_TARGET_DIR)
+
+            # آپلود فایل
+            with open(file_path, "rb") as file:
+                ftp.storbinary(f"STOR {os.path.basename(file_path)}", file)
+
+        update.message.reply_text(f"فایل با موفقیت به هاست دانلود آپلود شد: {os.path.basename(file_path)}")
     except Exception as e:
-        return False, str(e)
+        update.message.reply_text(f"خطا در آپلود به FTP: {str(e)}")
 
-# دستور شروع ربات
-def start(update, context):
-    update.message.reply_text("سلام! من یک ربات دانلود تورنت هستم. لطفاً لینک تورنت یا لینک فایل مستقیم را ارسال کنید.")
-
-# دستور دانلود از تورنت
-def download(update, context):
-    url = " ".join(context.args)
-    if not url:
-        update.message.reply_text("لطفاً یک لینک تورنت یا لینک فایل مستقیم ارسال کنید.")
-        return
-
-    # اگر URL تورنت باشد، دانلود شروع می‌شود
-    success, error = download_torrent(url)
-    if success:
-        # فایل دانلود شده است، حالا آن را آپلود می‌کنیم
-        downloaded_file = os.path.join(DOWNLOAD_DIR, os.listdir(DOWNLOAD_DIR)[0])
-        success, error = upload_to_ftp(downloaded_file)
-        if success:
-            update.message.reply_text(f"فایل با موفقیت به هاست آپلود شد: {downloaded_file}")
-        else:
-            update.message.reply_text(f"خطا در آپلود فایل به هاست: {error}")
-    else:
-        update.message.reply_text(f"خطا در دانلود تورنت: {error}")
-
-# دستور آپلود فایل مستقیم
-def upload_direct(update, context):
-    url = " ".join(context.args)
-    if not url:
-        update.message.reply_text("لطفاً یک لینک فایل مستقیم ارسال کنید.")
-        return
-
-    # دانلود فایل از لینک مستقیم
-    filename = os.path.join(DOWNLOAD_DIR, url.split('/')[-1])
-    os.system(f"curl -o {filename} {url}")
-    
-    # آپلود به FTP
-    success, error = upload_to_ftp(filename)
-    if success:
-        update.message.reply_text(f"فایل با موفقیت به هاست آپلود شد: {filename}")
-    else:
-        update.message.reply_text(f"خطا در آپلود فایل به هاست: {error}")
-
-# اجرای ربات
+# تابع اصلی برنامه
 def main():
-    updater = Updater(TELEGRAM_API_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    # ایجاد و راه‌اندازی ربات
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("download", download))  # برای دانلود تورنت
-    dp.add_handler(CommandHandler("upload", upload_direct))  # برای آپلود لینک مستقیم
+    # دستورات
+    application.add_handler(CommandHandler("start", start))
 
-    updater.start_polling()
-    updater.idle()
+    # پیام‌ها
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # شروع ربات
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
