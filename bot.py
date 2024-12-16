@@ -1,11 +1,10 @@
 import os
 import ftplib
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
-from telegram.ext.filters import Filters  # تغییر واردات Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, Filters
 
 # توکن ربات تلگرام خود را وارد کنید
-TELEGRAM_TOKEN = 'توکن_ربات_تلگرام_شما'
+TELEGRAM_TOKEN = '7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504'  # توکن ربات شما
 
 # اطلاعات FTP
 FTP_HOST = "89.235.78.130"
