@@ -1,5 +1,6 @@
 import os
 import ftplib
+import asyncio
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, Application
 from telegram.ext import filters  # تغییر در واردات filters
@@ -60,6 +61,7 @@ async def main():
     # شروع ربات
     await application.run_polling()
 
+# اگر برنامه در حال اجرا باشد، از این بخش استفاده می‌کنیم
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())  # استفاده از asyncio برای اجرای main
+    # اجرای همزمان ربات با استفاده از loop موجود
+    asyncio.get_event_loop().run_until_complete(main())
