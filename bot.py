@@ -1,101 +1,65 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram.ext import CallbackContext
 import os
+import telegram
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from webtorrent import WebTorrent
 import ftplib
-import aria2p
+import shutil
 
-# توکن ربات تلگرام شما
-TELEGRAM_TOKEN = "7328102300:AAG-E74QGLOKh9YtdtRbZwtQuUUtYGGt504"
+# متغیرهای محیطی
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')  # توکن ربات تلگرام
+FTP_HOST = os.getenv('FTP_HOST')  # آی‌پی هاست FTP
+FTP_USER = os.getenv('FTP_USER')  # نام کاربری FTP
+FTP_PASS = os.getenv('FTP_PASS')  # پسورد FTP
+FTP_TARGET_DIR = os.getenv('FTP_TARGET_DIR')  # پوشه مقصد در هاست FTP
 
-# اطلاعات FTP
-FTP_HOST = "89.235.78.130"
-FTP_USER = "pl.ortatv.fun"
-FTP_PASS = "k7ghB95KaTofWOx4"
-FTP_TARGET_DIR = "/series"
+# اتصال به تلگرام
+updater = Updater(TELEGRAM_TOKEN, use_context=True)
+dispatcher = updater.dispatcher
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
 
-# پیکربندی aria2
-aria2 = aria2p.API(aria2p.Client(
-    host="http://127.0.0.1:6800/jsonrpc",  # آدرس سرور aria2
-    secret=""
-))
-
-# تابع شروع ربات
-async def start(update: Update, context: CallbackContext):
-    await update.message.reply_text("سلام! من آماده‌ام که به شما کمک کنم. لطفاً یک لینک تورنت یا لینک مستقیم ارسال کنید.")
-
-# تابع برای پردازش لینک‌ها (تورنت یا مستقیم)
-async def handle_message(update: Update, context: CallbackContext):
-    text = update.message.text
-
-    # اگر لینک تورنت است
-    if text.endswith(".torrent"):
-        await update.message.reply_text("در حال دانلود فایل تورنت...")
-        download_torrent(text, update)
-    # اگر لینک مستقیم است
-    elif text.startswith("http"):
-        await update.message.reply_text("در حال دانلود فایل از لینک مستقیم...")
-        download_direct_link(text, update)
-    else:
-        await update.message.reply_text("لطفاً یک لینک تورنت یا لینک مستقیم معتبر ارسال کنید.")
-
-# دانلود تورنت با aria2
-def download_torrent(torrent_url: str, update: Update):
-    try:
-        # دانلود تورنت با aria2
-        download = aria2.add_torrent(torrent_url)
-        file_path = download.files[0].path
-
-        # آپلود فایل به هاست دانلود
-        upload_to_ftp(file_path, update)
-    except Exception as e:
-        update.message.reply_text(f"خطا در دانلود تورنت: {str(e)}")
-
-# دانلود لینک مستقیم و آپلود به FTP
-def download_direct_link(url: str, update: Update):
-    try:
-        # دانلود فایل از لینک مستقیم
-        file_name = url.split("/")[-1]
-        download_path = os.path.join("/tmp", file_name)
-
-        os.system(f"curl -L {url} -o {download_path}")
-
-        # آپلود فایل به هاست دانلود
-        upload_to_ftp(download_path, update)
-    except Exception as e:
-        update.message.reply_text(f"خطا در دانلود لینک مستقیم: {str(e)}")
+# دانلود تورنت با WebTorrent
+def download_torrent(torrent_magnet, file_name):
+    client = WebTorrent()
+    client.add(torrent_magnet, lambda torrent: torrent.download(file_name))
+    print(f"دانلود تورنت {torrent_magnet} با نام {file_name} تکمیل شد.")
 
 # آپلود فایل به هاست FTP
-def upload_to_ftp(file_path: str, update: Update):
-    try:
-        # اتصال به FTP
-        with ftplib.FTP(FTP_HOST) as ftp:
-            ftp.login(FTP_USER, FTP_PASS)
+def upload_to_ftp(file_path):
+    with ftplib.FTP(FTP_HOST) as ftp:
+        ftp.login(FTP_USER, FTP_PASS)
+        with open(file_path, 'rb') as file:
+            ftp.storbinary(f'STOR {FTP_TARGET_DIR}/{os.path.basename(file_path)}', file)
+    print(f"فایل {file_path} به هاست FTP آپلود شد.")
 
-            # تغییر به دایرکتوری مقصد
-            ftp.cwd(FTP_TARGET_DIR)
+# دستور /start
+def start(update, context):
+    update.message.reply_text("سلام! برای دانلود تورنت و ارسال فایل‌ها به هاست FTP، لینک تورنت یا فایل را ارسال کنید.")
 
-            # آپلود فایل
-            with open(file_path, "rb") as file:
-                ftp.storbinary(f"STOR {os.path.basename(file_path)}", file)
+# دریافت لینک تورنت و دانلود آن
+def handle_message(update, context):
+    if update.message.text.startswith('magnet:'):
+        torrent_magnet = update.message.text
+        file_name = 'downloaded_file'  # نام فایل دانلود شده
+        update.message.reply_text('در حال دانلود تورنت...')
+        download_torrent(torrent_magnet, file_name)
+        update.message.reply_text(f'تورنت دانلود شد: {file_name}')
 
-        update.message.reply_text(f"فایل با موفقیت به هاست دانلود آپلود شد: {os.path.basename(file_path)}")
-    except Exception as e:
-        update.message.reply_text(f"خطا در آپلود به FTP: {str(e)}")
+        # آپلود فایل به FTP
+        update.message.reply_text('در حال آپلود فایل به هاست...')
+        upload_to_ftp(file_name)
+        update.message.reply_text(f'فایل به هاست آپلود شد: {file_name}')
+        
+        # حذف فایل دانلود شده بعد از آپلود
+        if os.path.exists(file_name):
+            os.remove(file_name)
+            print(f"فایل {file_name} حذف شد.")
 
-# تابع اصلی برنامه
-def main():
-    # ایجاد و راه‌اندازی ربات
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+# اتصال دستورات به ربات
+start_handler = CommandHandler('start', start)
+dispatcher.add_handler(start_handler)
 
-    # دستورات
-    application.add_handler(CommandHandler("start", start))
+message_handler = MessageHandler(Filters.text & ~Filters.command, handle_message)
+dispatcher.add_handler(message_handler)
 
-    # پیام‌ها
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # شروع ربات
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+# شروع ربات
+updater.start_polling()
