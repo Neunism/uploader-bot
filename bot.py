@@ -1,83 +1,62 @@
 import os
 import ftplib
-import logging
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# اطلاعات FTP شما
+# توکن ربات تلگرام خود را وارد کنید
+TELEGRAM_TOKEN = 'توکن_ربات_تلگرام_شما'
+
+# اطلاعات FTP
 FTP_HOST = "89.235.78.130"
-FTP_USERNAME = "pl.ortatv.fun"
-FTP_PASSWORD = "k7ghB95KaTofWOx4"
-FTP_DEST_DIR = "/series"  # پوشه مقصد در هاست
+FTP_USER = "pl.ortatv.fun"
+FTP_PASS = "k7ghB95KaTofWOx4"
+FTP_DIR = "/series"
 
-# فعال کردن لاگینگ
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
+# تابع برای آپلود فایل به سرور FTP
+def upload_to_ftp(file_path: str):
+    try:
+        with ftplib.FTP(FTP_HOST) as ftp:
+            ftp.login(FTP_USER, FTP_PASS)
+            with open(file_path, "rb") as file:
+                ftp.cwd(FTP_DIR)
+                ftp.storbinary(f"STOR {os.path.basename(file_path)}", file)
+        return True
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+        return False
 
+# تابع برای شروع کار ربات
 def start(update: Update, context: CallbackContext):
-    """پیام خوش‌آمدگویی"""
-    update.message.reply_text("سلام! من یک ربات هستم. لطفاً لینک مستقیم فایل را ارسال کن تا آن را به هاست آپلود کنم.")
+    update.message.reply_text('سلام! من آماده هستم تا فایل‌ها را دریافت کنم و آپلود کنم.')
 
-def handle_message(update: Update, context: CallbackContext):
-    """وقتی که پیام حاوی لینک مستقیم باشد"""
-    url = update.message.text
-    
-    # بررسی لینک
-    if url.startswith("http://") or url.startswith("https://"):
-        update.message.reply_text(f"در حال آپلود فایل از لینک: {url}")
+# تابع برای ارسال پیام هنگامی که فایل ارسال می‌شود
+def handle_file(update: Update, context: CallbackContext):
+    file = update.message.document
+    if file:
+        file_path = file.get_file().download()
+        update.message.reply_text(f"در حال آپلود فایل {file.file_name} به سرور FTP...")
         
-        try:
-            # آپلود فایل
-            upload_to_ftp(url)
-            update.message.reply_text("آپلود فایل با موفقیت انجام شد!")
-        except Exception as e:
-            update.message.reply_text(f"خطا در آپلود فایل: {e}")
+        # ارسال فایل به FTP
+        if upload_to_ftp(file_path):
+            update.message.reply_text(f"فایل {file.file_name} با موفقیت آپلود شد!")
+        else:
+            update.message.reply_text(f"خطا در آپلود فایل {file.file_name}. لطفاً دوباره امتحان کنید.")
     else:
-        update.message.reply_text("این لینک معتبر نیست. لطفاً یک لینک مستقیم ارسال کنید.")
+        update.message.reply_text("لطفاً یک فایل ارسال کنید.")
 
-def upload_to_ftp(url: str):
-    """آپلود فایل به هاست FTP"""
-    
-    # اتصال به FTP
-    ftp = ftplib.FTP(FTP_HOST)
-    ftp.login(FTP_USERNAME, FTP_PASSWORD)
-    
-    # دریافت فایل از URL
-    local_filename = url.split("/")[-1]  # نام فایل را از URL استخراج می‌کنیم
-    with open(local_filename, 'wb') as f:
-        f.write(requests.get(url).content)
-
-    # آپلود به FTP
-    with open(local_filename, 'rb') as file:
-        ftp.cwd(FTP_DEST_DIR)  # پوشه مقصد
-        ftp.storbinary(f"STOR {local_filename}", file)
-
-    # بستن اتصال FTP
-    ftp.quit()
-
-    # حذف فایل محلی پس از آپلود
-    os.remove(local_filename)
-
+# تابع برای تنظیمات و شروع ربات
 def main():
-    """راه‌اندازی ربات"""
-    
-    # توکن ربات
-    TELEGRAM_TOKEN = "YOUR_BOT_TOKEN"
-    
-    # راه‌اندازی ربات
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-
-    # تنظیم دستور start
-    dispatcher.add_handler(CommandHandler("start", start))
-
-    # تنظیم دریافت پیام‌ها و بررسی لینک‌ها
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
+    dp = updater.dispatcher
+    
+    # دستورات ربات
+    dp.add_handler(CommandHandler("start", start))
+    
+    # دریافت فایل‌ها
+    dp.add_handler(MessageHandler(Filters.document, handle_file))
+    
     # شروع ربات
     updater.start_polling()
-
-    # اجرای ربات تا زمانی که خاموش نشود
     updater.idle()
 
 if __name__ == '__main__':
